@@ -1,0 +1,27 @@
+{
+  "name": "cerebras-multi-mcp",
+  "version": "1.0.0",
+  "description": "Multi-model Cerebras MCP server with per-call model selection for Claude Code/Desktop",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": {
+    "cerebras-multi-mcp": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Bassem EL KHANSAA",
+  "license": "MIT",
+  "keywords": ["cerebras", "mcp", "claude", "llm", "inference", "multi-model"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/khansabassem/cerebras-multi-mcp.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "diff": "^8.0.3"
+  }
+}

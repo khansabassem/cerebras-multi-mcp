@@ -1,0 +1,7 @@
+node_modules/
+.claude/
+test-llama8b/
+test-qwen235b/
+*.log
+.env
+.DS_Store

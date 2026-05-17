@@ -123,9 +123,20 @@ function detectLang(filePath) {
 
 // ── File helpers ─────────────────────────────────────────────────────────────
 
+// When running inside Docker on Linux, Windows-style paths like C:\Users\...
+// must be translated to /c/Users/... (matching the -v C:/:/c/ volume mount).
+// On Windows (plain node, no Docker), paths are used as-is.
+function toContainerPath(p) {
+  if (process.platform !== "win32") {
+    const m = p.match(/^([A-Za-z]):[/\\](.*)/s);
+    if (m) return `/${m[1].toLowerCase()}/${m[2].replace(/\\/g, "/")}`;
+  }
+  return p;
+}
+
 async function readFile(filePath) {
   try {
-    let p = filePath;
+    let p = toContainerPath(filePath);
     if (!path.isAbsolute(p)) {
       if (p.startsWith("~"))
         p = p.replace("~", process.env.HOME || process.env.USERPROFILE);
@@ -139,7 +150,7 @@ async function readFile(filePath) {
 }
 
 async function writeFileSafe(filePath, content) {
-  let p = filePath;
+  let p = toContainerPath(filePath);
   if (!path.isAbsolute(p)) {
     if (p.startsWith("~"))
       p = p.replace("~", process.env.HOME || process.env.USERPROFILE);
@@ -370,6 +381,15 @@ async function handleWrite(toolName, args) {
 
   // Write to disk
   await writeFileSafe(file_path, cleanResult);
+
+  // Verify write landed — catches container-FS-only writes early
+  const written = await readFile(file_path);
+  if (written === null) {
+    throw new Error(
+      `Write reported success but file not found at ${file_path}. ` +
+      `If running in Docker, ensure the volume mount covers this path.`
+    );
+  }
 
   // Build response
   const fileName = path.basename(file_path);

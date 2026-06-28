@@ -18,10 +18,10 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 const MODELS = {
   cerebras_quick: {
-    id: "llama3.1-8b",
-    label: "Quick (8B)",
+    id: "gpt-oss-120b",
+    label: "Quick (120B)",
     description:
-      "Fastest model for simple edits, boilerplate, single-function generation. Use for trivial tasks where speed matters most.",
+      "Fast model for simple edits, boilerplate, single-function generation. Use for trivial tasks where speed matters most.",
   },
   cerebras_complex: {
     id: "gpt-oss-120b",
@@ -31,15 +31,17 @@ const MODELS = {
   },
   cerebras_reasoning: {
     id: "zai-glm-4.7",
-    label: "Reasoning (357B)",
+    label: "Reasoning (355B)",
     description:
       "Most powerful model for algorithms, architecture decisions, advanced logic, and tasks requiring deep reasoning.",
+    reasoning: true,
   },
   cerebras_instruct: {
-    id: "qwen-3-235b-a22b-instruct-2507",
-    label: "Instruct (235B)",
+    id: "zai-glm-4.7",
+    label: "Instruct (355B)",
     description:
       "Instruction-tuned model for precise instruction following, documentation-heavy code, typed interfaces, and detailed specs.",
+    reasoning: true,
   },
 };
 
@@ -177,7 +179,7 @@ function cleanCode(response) {
 
 // ── HTTP POST helper ─────────────────────────────────────────────────────────
 
-function httpPost(hostname, apiPath, headers, body) {
+function httpPost(hostname, apiPath, headers, body, timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
     const opts = {
@@ -198,7 +200,8 @@ function httpPost(hostname, apiPath, headers, body) {
         try {
           const json = JSON.parse(raw);
           if (res.statusCode === 200 && json.choices && json.choices[0]) {
-            resolve(json.choices[0].message.content);
+            const msg = json.choices[0].message;
+            resolve(msg.content ?? msg.reasoning ?? "");
           } else {
             reject(
               new Error(
@@ -212,9 +215,9 @@ function httpPost(hostname, apiPath, headers, body) {
       });
     });
     req.on("error", (e) => reject(e));
-    req.setTimeout(60000, () => {
+    req.setTimeout(timeoutMs, () => {
       req.destroy();
-      reject(new Error("Request timeout after 60s"));
+      reject(new Error(`Request timeout after ${timeoutMs / 1000}s`));
     });
     req.write(data);
     req.end();
@@ -222,6 +225,12 @@ function httpPost(hostname, apiPath, headers, body) {
 }
 
 // ── Cerebras API call ────────────────────────────────────────────────────────
+
+const REASONING_MODEL_IDS = new Set(
+  Object.values(MODELS)
+    .filter((m) => m.reasoning)
+    .map((m) => m.id)
+);
 
 async function callCerebras(modelId, prompt, systemPrompt, temperature, maxTokens) {
   if (!CEREBRAS_API_KEY) throw new Error("CEREBRAS_API_KEY not set");
@@ -235,11 +244,14 @@ async function callCerebras(modelId, prompt, systemPrompt, temperature, maxToken
     stream: false,
   };
   if (maxTokens) body.max_tokens = maxTokens;
+  const isReasoning = REASONING_MODEL_IDS.has(modelId);
+  if (isReasoning) body.reasoning_format = "hidden";
   return httpPost(
     "api.cerebras.ai",
     "/v1/chat/completions",
     { Authorization: `Bearer ${CEREBRAS_API_KEY}` },
-    body
+    body,
+    isReasoning ? 120000 : 60000
   );
 }
 
@@ -248,10 +260,8 @@ async function callCerebras(modelId, prompt, systemPrompt, temperature, maxToken
 async function callOpenRouter(modelId, prompt, systemPrompt, temperature, maxTokens) {
   if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not set");
   const orModelMap = {
-    "llama3.1-8b": "meta-llama/llama-3.1-8b-instruct",
     "gpt-oss-120b": "cerebras/gpt-oss-120b",
     "zai-glm-4.7": "cerebras/zai-glm-4.7",
-    "qwen-3-235b-a22b-instruct-2507": "qwen/qwen3-235b-a22b",
   };
   const body = {
     model: orModelMap[modelId] || modelId,
@@ -466,7 +476,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     buildToolSchema(
       "cerebras_quick",
-      `Fast code generation using Cerebras llama3.1-8b (8B params). ${MODELS.cerebras_quick.description}`
+      `Fast code generation using Cerebras gpt-oss-120b (120B params). ${MODELS.cerebras_quick.description}`
     ),
     buildToolSchema(
       "cerebras_complex",
@@ -474,11 +484,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     ),
     buildToolSchema(
       "cerebras_reasoning",
-      `Advanced reasoning code generation using Cerebras zai-glm-4.7 (357B params). ${MODELS.cerebras_reasoning.description}`
+      `Advanced reasoning code generation using Cerebras zai-glm-4.7 (355B params, reasoning_format:hidden). ${MODELS.cerebras_reasoning.description}`
     ),
     buildToolSchema(
       "cerebras_instruct",
-      `Instruction-following code generation using Cerebras qwen-3-235b (235B params). ${MODELS.cerebras_instruct.description}`
+      `Instruction-following code generation using Cerebras zai-glm-4.7 (355B params, reasoning_format:hidden). ${MODELS.cerebras_instruct.description}`
     ),
     buildToolSchema(
       "cerebras_auto",
